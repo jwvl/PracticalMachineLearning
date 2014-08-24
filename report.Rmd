@@ -1,0 +1,99 @@
+Course Project report for Coursera's Practical Machine Learning
+========================================================
+
+## Synopsis
+This brief report describes my attempt to train a machine learning algorithm
+for a course on machine learning. A random forest algorithm was trained
+on some 'quantified self' data where readings from a number of wearable sensors
+were used to to predict was a type of exercise being performed by the wearer.
+The random forest model performed quite well, reaching an error rate of >99.5% correct
+on a held out validation subset of the training data.
+
+## Data: source
+The data originally came from the [Weight Lifting Exercise Dataset](http://groupware.les.inf.puc-rio.br/har). Specific
+training and testing data were provided on the Coursera page.
+
+
+## Reading and pre-processing data
+The zipped data were read in using the read.csv function. Empty cells and cells containing the string "NA" were converted
+to R's NA value when reading in the data. These 'raw' data files contained 160 variable columns.
+
+```{r, cache=TRUE}
+trainingRaw <- read.csv("pml-training.csv",na.strings=c("","NA"))
+testingRaw <- read.csv("pml-testing.csv",na.strings=c("","NA"))
+```
+
+A quick inspection of the data revealed that many columns almost exclusively contained NA values and would therefore not
+be relevant for the learning algorithm.
+Likewise, a number of columns containing data not read from sensors (timestamps, wearer names, etc.)
+were eligible for deletion.
+Using the below function, both training and testing data were cleaned of these irrelevant columns.
+
+```{r, cache=TRUE}
+cleanData <- function(df) {
+    dfClean<- df[colMeans(is.na(df)) <= 0.9]
+    # Remove rows with 'timestamp' as they are useless for prediction
+    dfClean<-dfClean[, -grep("timestamp",colnames(dfClean)) ]
+    # And some other useless rows
+    dfClean <- dfClean[, -which(names(dfClean) %in% c("row.names","X","user_name","new_window","num_window"))]
+    #Return result
+    dfClean
+}
+trainingClean <- cleanData(trainingRaw)
+testingClean <-cleanData(testingRaw)
+```
+
+## Cross validation
+
+The training set was further divided into training and validation data using caret's
+createDataPartition function.
+
+```{r, cache=TRUE}
+library(caret)
+
+inTrain = createDataPartition(trainingClean$classe, p = 0.7)[[1]]
+# Divide into training and validation sets
+training = trainingClean[ inTrain,]
+validation = trainingClean[-inTrain,]
+```
+
+## Training a random forest model
+
+I chose a random forest algorithm as the course indicated that they consistently perform
+well on classification tasks. Specifically I used the randomForest package.
+
+The training and validation sets were split into predictor columns and a decision (variable to be predicted)
+column:
+
+
+```{r, cache=TRUE}
+trainingPredictors <- training[, -which(names(training) %in% c("classe"))]
+trainingDecision <- training[, which(names(training) %in% c("classe"))]
+validationPredictors <- validation[, -which(names(validation) %in% c("classe"))]
+validationDecision <- validation[, which(names(validation) %in% c("classe"))]
+```
+
+Next I trained the model using the default parameters, saving the results to a model fit object.
+
+```{r, cache=TRUE}
+library(randomForest)
+modFit <- randomForest(x=trainingPredictors, y=trainingDecision, xtest=validationPredictors, ytest=validationDecision)
+print(modFit)
+```
+
+## Result
+
+The resulting confusion matrix shows an out-of-sample error rate of less than 0.5% on the validation set.
+
+```{r, cache=TRUE}
+print(modFit)
+```
+
+I expect that this good performance will be maintained in the test set provided for the assignment. The below code uses
+the fitted model to predict the test set.
+
+```{r, cache=TRUE}
+modFitForPrediction <- randomForest(x=trainingPredictors, y=trainingDecision)
+testingSansProblemID <- testingClean[, -which(names(testingClean) %in% c("problem_id"))]
+answers<- predict(modFitForPrediction, testingSansProblemID)
+```
